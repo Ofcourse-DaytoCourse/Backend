@@ -1,0 +1,22 @@
+services:
+  postgres:
+    image: postgres:15
+    container_name: daytocourse-postgres
+    environment:
+      POSTGRES_DB: daytocourse
+      POSTGRES_USER: daytocourse_user
+      POSTGRES_PASSWORD: daytocourse_pass
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./create_database_postgresql.sql:/docker-entrypoint-initdb.d/01-schema.sql
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U daytocourse_user -d daytocourse"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
