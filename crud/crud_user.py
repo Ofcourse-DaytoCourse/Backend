@@ -13,6 +13,25 @@ from models.comment import Comment
 import uuid
 
 
+async def grant_signup_bonus(db: AsyncSession, user_id: str):
+    """신규 가입자에게 3000원 환불불가 보너스 지급"""
+    from crud.crud_payment import create_charge_history, update_user_balance
+    from schemas.payment_schema import ChargeHistoryCreate
+    
+    # 충전 이력 생성 (환불 불가능)
+    charge_data = ChargeHistoryCreate(
+        user_id=user_id,
+        amount=3000,
+        is_refundable=False,  # 환불 불가능
+        source_type="bonus",
+        description="신규 가입 보너스"
+    )
+    
+    # 잔액 업데이트 (환불 불가능 잔액으로)
+    await update_user_balance(db, user_id, 3000, is_add=True, is_refundable=False)
+    await create_charge_history(db, charge_data)
+
+
 
 def generate_temp_nickname(kakao_name: str) -> str:
     unique_id = str(uuid.uuid4())[:8]
@@ -118,6 +137,9 @@ async def create_user_with_oauth(
     )
     db.add(db_oauth)
     await db.commit()
+
+    # 신규 가입자에게 3000원 환불불가 보너스 지급
+    await grant_signup_bonus(db, db_user.user_id)
 
     return {
         "status": "success",

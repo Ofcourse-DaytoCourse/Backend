@@ -15,6 +15,30 @@ CONFIGS = {
         "kakao_rest_api_key": os.getenv("KAKAO_REST_API_KEY"),
         "kakao_redirect_uri": os.getenv("KAKAO_REDIRECT_URI"),
         "jwt_secret": os.getenv("JWT_SECRET", "your-super-secret-jwt-key-change-in-production-2024"),
+        
+        # 9.1 결제 시스템 환경 변수 추가
+        "signup_bonus_amount": int(os.getenv("SIGNUP_BONUS_AMOUNT", "10000")),
+        "deposit_expiry_hours": int(os.getenv("DEPOSIT_EXPIRY_HOURS", "1")),
+        "sms_parsing_enabled": os.getenv("SMS_PARSING_ENABLED", "true").lower() == "true",
+        "default_bank_name": os.getenv("DEFAULT_BANK_NAME", "국민은행"),
+        "default_account_number": os.getenv("DEFAULT_ACCOUNT_NUMBER", "12345678901234"),
+        
+        # 레이트 리미팅 설정
+        "rate_limit_enabled": os.getenv("RATE_LIMIT_ENABLED", "true").lower() == "true",
+        "rate_limit_deposit_generate": os.getenv("RATE_LIMIT_DEPOSIT_GENERATE", "1/minute"),
+        "rate_limit_refund_request": os.getenv("RATE_LIMIT_REFUND_REQUEST", "3/hour"),
+        "rate_limit_balance_deduct": os.getenv("RATE_LIMIT_BALANCE_DEDUCT", "10/minute"),
+        
+        # 환불 시스템 설정
+        "refund_partial_enabled": os.getenv("REFUND_PARTIAL_ENABLED", "true").lower() == "true",
+        "refund_minimum_amount": int(os.getenv("REFUND_MINIMUM_AMOUNT", "1000")),
+        "refund_maximum_days": int(os.getenv("REFUND_MAXIMUM_DAYS", "30")),
+        
+        # 로그 최적화 설정
+        "log_cleanup_enabled": os.getenv("LOG_CLEANUP_ENABLED", "true").lower() == "true",
+        "rate_limit_log_retention_hours": int(os.getenv("RATE_LIMIT_LOG_RETENTION_HOURS", "24")),
+        "unmatched_deposit_retention_days": int(os.getenv("UNMATCHED_DEPOSIT_RETENTION_DAYS", "180")),
+        "cleanup_schedule_hours": int(os.getenv("CLEANUP_SCHEDULE_HOURS", "1")),
     },
     "production": {
         "api_url": "https://api.example.com",

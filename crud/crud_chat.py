@@ -187,7 +187,7 @@ class ChatCRUD:
                 return agent_response
             
             # 세션 업데이트
-            session.session_status = "COMPLETED"
+            session.session_status = "INACTIVE"
             session.last_activity_at = datetime.now()
             
             # 추천 완료 메시지 추가
