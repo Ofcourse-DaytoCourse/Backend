@@ -9,7 +9,7 @@ from routers.users import router as users_router
 # 현재 디렉토리를 모듈 경로에 추가
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from routers import users, courses, couples, comments, auth, chat, payments, sms, admin
+from routers import users, courses, couples, comments, auth, chat, payments, sms, admin, places, reviews
 import config  # config.py의 설정 불러오기
 
 # ✅ 모든 모델 임포트 (SQLAlchemy 관계 설정을 위해 필수)
@@ -62,6 +62,8 @@ from routers import payments_new
 app.include_router(payments_new.router)
 app.include_router(sms.router)
 app.include_router(admin.router)
+app.include_router(places.router)
+app.include_router(reviews.router)
 
 # 검증 에러 핸들러 추가 (로깅용)
 @app.exception_handler(RequestValidationError)

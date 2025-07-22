@@ -438,6 +438,57 @@ async def get_user_deposit_summary(
             "error_code": "INTERNAL_ERROR"
         }
 
+def calculate_review_reward(review_data: dict) -> int:
+    """후기 타입에 따른 크레딧 계산 (환불 불가능)"""
+    has_text = review_data.get('review_text') and len(review_data['review_text'].strip()) > 0
+    has_photos = review_data.get('photo_urls') and len(review_data['photo_urls']) > 0
+    
+    if has_text and has_photos:
+        return 500  # 평점 + 텍스트 + 사진
+    elif has_text:
+        return 300  # 평점 + 텍스트
+    else:
+        return 100  # 평점만
+
+async def process_review_credit(user_id: str, review_data: dict, db: AsyncSession) -> Dict[str, Any]:
+    """후기 작성 크레딧 지급 (환불 불가능 잔액으로)"""
+    try:
+        amount = calculate_review_reward(review_data)
+        
+        # 기존 UserBalance 모델 활용
+        user_balance = await get_or_create_user_balance(db, user_id)
+        
+        # 환불 불가능 잔액으로 추가
+        user_balance.add_balance(amount, is_refundable=False)
+        
+        # 충전 히스토리 기록
+        from models.payment import ChargeHistory
+        charge_history = ChargeHistory(
+            user_id=user_id,
+            amount=amount,
+            source_type="review_reward",
+            description=f"후기 작성 보상 ({amount}원)",
+            is_refundable=False
+            # updated_at은 자동으로 설정됨 (명시적으로 None 전달하지 않음)
+        )
+        db.add(charge_history)
+        
+        await db.commit()
+        
+        return {
+            "success": True,
+            "amount": amount,
+            "message": f"후기 작성 보상 {amount}원이 지급되었습니다"
+        }
+        
+    except Exception as e:
+        await db.rollback()
+        return {
+            "success": False,
+            "amount": 0,
+            "message": f"크레딧 지급 실패: {str(e)}"
+        }
+
 async def validate_payment_amount(amount: int) -> Dict[str, Any]:
     """결제 금액 검증"""
     

@@ -31,7 +31,7 @@ class ChargeHistory(Base):
         CheckConstraint('amount > 0', name='chk_charge_amount_positive'),
         CheckConstraint('refunded_amount >= 0', name='chk_refunded_amount_positive'),
         CheckConstraint('refunded_amount <= amount', name='chk_refunded_amount_valid'),
-        CheckConstraint("source_type IN ('deposit', 'bonus', 'refund', 'admin')", name='chk_charge_source_type_valid'),
+        CheckConstraint("source_type IN ('deposit', 'bonus', 'refund', 'admin', 'review_reward')", name='chk_charge_source_type_valid'),
         CheckConstraint("refund_status IN ('available', 'partially_refunded', 'fully_refunded', 'unavailable')", name='chk_refund_status_valid'),
         
         # 인덱스 설정

@@ -281,8 +281,49 @@ INSERT INTO place_category (category_name) VALUES
 -- 데이터베이스 통계 업데이트
 ANALYZE;
 
+-- ================================================================
+-- place_reviews 테이블 생성 (장소별 후기 시스템)
+-- ================================================================
+CREATE TABLE place_reviews (
+    id SERIAL PRIMARY KEY,
+    user_id VARCHAR(36) NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    place_id VARCHAR(50) NOT NULL REFERENCES places(place_id) ON DELETE CASCADE,
+    course_id INTEGER NOT NULL REFERENCES courses(course_id) ON DELETE CASCADE,
+    rating INTEGER NOT NULL CHECK (rating >= 1 AND rating <= 5),
+    review_text TEXT,
+    tags VARCHAR(255)[] DEFAULT '{}',
+    photo_urls TEXT[] DEFAULT '{}',
+    is_deleted BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    
+    -- 사용자당 장소별 1회만 후기 작성 가능
+    CONSTRAINT uq_user_place_review UNIQUE(user_id, place_id)
+);
+
+-- place_reviews 인덱스 생성
+CREATE INDEX idx_place_reviews_place_id ON place_reviews(place_id);
+CREATE INDEX idx_place_reviews_user_id ON place_reviews(user_id);
+CREATE INDEX idx_place_reviews_rating ON place_reviews(rating);
+CREATE INDEX idx_place_reviews_created_at ON place_reviews(created_at DESC);
+
+-- 후기 통계를 위한 뷰
+CREATE VIEW place_review_stats AS
+SELECT 
+    place_id,
+    COUNT(*) as review_count,
+    ROUND(AVG(rating), 2) as average_rating,
+    COUNT(*) FILTER (WHERE rating = 5) as rating_5_count,
+    COUNT(*) FILTER (WHERE rating = 4) as rating_4_count,
+    COUNT(*) FILTER (WHERE rating = 3) as rating_3_count,
+    COUNT(*) FILTER (WHERE rating = 2) as rating_2_count,
+    COUNT(*) FILTER (WHERE rating = 1) as rating_1_count
+FROM place_reviews 
+WHERE is_deleted = FALSE
+GROUP BY place_id;
+
 -- 스크립트 실행 완료 메시지
-SELECT 'PostgreSQL 데이터베이스 스키마 생성 완료' AS status;-- 🚀 결제 시스템 테이블 생성 마이그레이션
+SELECT 'PostgreSQL 데이터베이스 스키마 생성 완료 (place_reviews 포함)' AS status;-- 🚀 결제 시스템 테이블 생성 마이그레이션
 -- 작성일: 2025-07-18
 -- 목적: 완전한 결제 시스템 구현을 위한 9개 테이블 생성
 
@@ -327,7 +368,7 @@ CREATE TABLE charge_histories (
     amount INTEGER NOT NULL CHECK (amount > 0),
     refunded_amount INTEGER DEFAULT 0 CHECK (refunded_amount >= 0),
     is_refundable BOOLEAN NOT NULL DEFAULT true,
-    source_type VARCHAR(20) NOT NULL DEFAULT 'deposit' CHECK (source_type IN ('deposit', 'bonus', 'refund', 'admin')),
+    source_type VARCHAR(20) NOT NULL DEFAULT 'deposit' CHECK (source_type IN ('deposit', 'bonus', 'refund', 'admin', 'review_reward')),
     description TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -749,7 +790,7 @@ CREATE TABLE charge_histories (
     amount INTEGER NOT NULL CHECK (amount > 0),
     refunded_amount INTEGER DEFAULT 0 CHECK (refunded_amount >= 0),
     is_refundable BOOLEAN NOT NULL DEFAULT true,
-    source_type VARCHAR(20) NOT NULL DEFAULT 'deposit' CHECK (source_type IN ('deposit', 'bonus', 'refund', 'admin')),
+    source_type VARCHAR(20) NOT NULL DEFAULT 'deposit' CHECK (source_type IN ('deposit', 'bonus', 'refund', 'admin', 'review_reward')),
     description TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -1171,7 +1212,7 @@ CREATE TABLE charge_histories (
     amount INTEGER NOT NULL CHECK (amount > 0),
     refunded_amount INTEGER DEFAULT 0 CHECK (refunded_amount >= 0),
     is_refundable BOOLEAN NOT NULL DEFAULT true,
-    source_type VARCHAR(20) NOT NULL DEFAULT 'deposit' CHECK (source_type IN ('deposit', 'bonus', 'refund', 'admin')),
+    source_type VARCHAR(20) NOT NULL DEFAULT 'deposit' CHECK (source_type IN ('deposit', 'bonus', 'refund', 'admin', 'review_reward')),
     description TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,

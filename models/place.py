@@ -27,4 +27,5 @@ class Place(Base):
     updated_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
     
     # 관계 설정
+    category = relationship("PlaceCategory", back_populates="places")
     category_relations = relationship("PlaceCategoryRelation", back_populates="place")
