@@ -101,7 +101,20 @@ async def read_course_detail(
     course = await crud_course.get_course_detail(db, user_id=user_id, course_id=course_id)
     if not course:
         raise HTTPException(status_code=404, detail="코스를 찾을 수 없습니다.")
-    return {"course": course}
+    
+    # 구매한 코스인지 확인
+    from sqlalchemy import select
+    from models.shared_course import CoursePurchase
+    
+    purchase_result = await db.execute(
+        select(CoursePurchase).where(CoursePurchase.copied_course_id == course_id)
+    )
+    is_purchased_course = purchase_result.scalar_one_or_none() is not None
+    
+    return {
+        "course": course,
+        "is_purchased_course": is_purchased_course
+    }
 
 # ✅ 3-4. 코스 상세 + 댓글 통합 조회 (연인과 공유) (GET /courses/comments)
 @router.get("/courses/comments", summary="코스 + 댓글 통합 조회")

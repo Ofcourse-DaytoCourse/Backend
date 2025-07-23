@@ -9,7 +9,7 @@ from routers.users import router as users_router
 # 현재 디렉토리를 모듈 경로에 추가
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from routers import users, courses, couples, comments, auth, chat, payments, sms, admin, places, reviews
+from routers import users, courses, couples, comments, auth, chat, payments, sms, admin, places, reviews, shared_courses
 import config  # config.py의 설정 불러오기
 
 # ✅ 모든 모델 임포트 (SQLAlchemy 관계 설정을 위해 필수)
@@ -31,6 +31,9 @@ from models.deposit import DepositRequest
 from models.payment import ChargeHistory, UsageHistory, UserBalance, RefundRequest
 from models.sms import SmsLog, UnmatchedDeposit, BalanceChangeLog
 from models.rate_limit import RateLimitLog
+
+# 코스 공유 시스템 모델 임포트
+from models.shared_course import SharedCourse, SharedCourseReview, CoursePurchase, CourseBuyerReview
 
 app = FastAPI(
     title="My Dating App API",
@@ -64,6 +67,7 @@ app.include_router(sms.router)
 app.include_router(admin.router)
 app.include_router(places.router)
 app.include_router(reviews.router)
+app.include_router(shared_courses.router)
 
 # 검증 에러 핸들러 추가 (로깅용)
 @app.exception_handler(RequestValidationError)

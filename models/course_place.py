@@ -1,4 +1,5 @@
 from sqlalchemy import Column, BigInteger, Integer, String, TIMESTAMP, ForeignKey, UniqueConstraint
+from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from models.base import Base
 
@@ -15,3 +16,7 @@ class CoursePlace(Base):
     estimated_duration = Column(Integer, nullable=True)
     estimated_cost = Column(Integer, nullable=True)
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), nullable=False)
+    
+    # Relationships
+    course = relationship("Course", back_populates="places")
+    place = relationship("Place")

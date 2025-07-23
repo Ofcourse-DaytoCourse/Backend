@@ -1,4 +1,5 @@
 from sqlalchemy import Column, BigInteger, String, Text, Boolean, Integer, JSON, TIMESTAMP, ForeignKey
+from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from models.base import Base
 
@@ -15,3 +16,6 @@ class Course(Base):
     comments = Column(JSON, nullable=True, server_default="[]")
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    
+    # Relationships
+    places = relationship("CoursePlace", back_populates="course")

@@ -502,3 +502,135 @@ async def validate_payment_amount(amount: int) -> Dict[str, Any]:
         "valid": True,
         "message": "올바른 결제 금액입니다"
     }
+
+
+# 코스 공유 시스템 전용 크레딧 함수들
+async def process_shared_course_credit(user_id: str, shared_course_id: int, db: AsyncSession) -> Dict[str, Any]:
+    """코스 공유 시 300원 지급 (환불 불가능)"""
+    try:
+        amount = 300
+        
+        user_balance = await get_or_create_user_balance(db, user_id)
+        user_balance.add_balance(amount, is_refundable=False)
+        db.add(user_balance)  # 명시적으로 업데이트 마킹
+        
+        # 충전 히스토리 기록
+        from models.payment import ChargeHistory
+        charge_history = ChargeHistory(
+            user_id=user_id,
+            amount=amount,
+            source_type="bonus",  # 허용된 값으로 변경
+            description=f"코스 공유 보상 (공유 ID: {shared_course_id})",
+            is_refundable=False
+        )
+        db.add(charge_history)
+        await db.flush()  # 변경사항 즉시 반영
+        
+        return {
+            "success": True,
+            "amount": amount,
+            "message": f"코스 공유 보상 {amount}원이 지급되었습니다"
+        }
+        
+    except Exception as e:
+        print(f"DEBUG: process_shared_course_credit 에러 발생: {type(e).__name__}: {str(e)}")
+        return {
+            "success": False,
+            "amount": 0,
+            "message": f"공유 보상 지급 실패: {str(e)}"
+        }
+
+
+async def process_course_purchase_payment(user_id: str, amount: int, db: AsyncSession):
+    """코스 구매 시 300원 차감"""
+    user_balance = await get_user_balance(db, user_id)
+    if not user_balance:
+        raise ValueError("사용자 잔액 정보를 찾을 수 없습니다")
+    
+    if not user_balance.has_sufficient_balance(amount):
+        raise ValueError(f"잔액이 부족합니다. (현재 잔액: {user_balance.total_balance}원)")
+    
+    # 잔액 차감 (환불 불가능 잔액 우선 차감)
+    user_balance.deduct_balance(amount)
+    
+    # 사용 내역 기록
+    from models.payment import UsageHistory
+    usage_history = UsageHistory(
+        user_id=user_id,
+        amount=amount,
+        service_type="premium_feature",
+        description=f"공유 코스 구매 ({amount}원)"
+    )
+    db.add(usage_history)
+    await db.commit()
+
+
+async def process_creator_save_reward(creator_user_id: str, shared_course_id: int, db: AsyncSession) -> Dict[str, Any]:
+    """코스 저장 시 창작자에게 100원 보상"""
+    try:
+        amount = 100
+        
+        user_balance = await get_or_create_user_balance(db, creator_user_id)
+        user_balance.add_balance(amount, is_refundable=False)
+        
+        # 충전 히스토리 기록
+        from models.payment import ChargeHistory
+        charge_history = ChargeHistory(
+            user_id=creator_user_id,
+            amount=amount,
+            source_type="course_save_reward",
+            description=f"코스 저장 보상 (공유 ID: {shared_course_id})",
+            is_refundable=False
+        )
+        db.add(charge_history)
+        await db.commit()
+        
+        return {
+            "success": True,
+            "amount": amount,
+            "message": f"저장 보상 {amount}원이 지급되었습니다"
+        }
+        
+    except Exception as e:
+        await db.rollback()
+        return {
+            "success": False,
+            "amount": 0,
+            "message": f"저장 보상 지급 실패: {str(e)}"
+        }
+
+
+async def process_buyer_review_credit(user_id: str, review_id: int, db: AsyncSession) -> Dict[str, Any]:
+    """구매자 후기 작성 시 300원 지급 (환불 불가능)"""
+    try:
+        amount = 300
+        
+        user_balance = await get_or_create_user_balance(db, user_id)
+        user_balance.add_balance(amount, is_refundable=False)
+        db.add(user_balance)  # 명시적으로 업데이트 마킹
+        
+        # 충전 히스토리 기록
+        from models.payment import ChargeHistory
+        charge_history = ChargeHistory(
+            user_id=user_id,
+            amount=amount,
+            source_type="bonus",  # 허용된 값으로 변경
+            description=f"구매자 후기 작성 보상 (후기 ID: {review_id})",
+            is_refundable=False
+        )
+        db.add(charge_history)
+        await db.flush()  # 변경사항 즉시 반영
+        
+        return {
+            "success": True,
+            "amount": amount,
+            "message": f"구매자 후기 작성 보상 {amount}원이 지급되었습니다"
+        }
+        
+    except Exception as e:
+        print(f"DEBUG: process_buyer_review_credit 에러 발생: {type(e).__name__}: {str(e)}")
+        return {
+            "success": False,
+            "amount": 0,
+            "message": f"후기 보상 지급 실패: {str(e)}"
+        }

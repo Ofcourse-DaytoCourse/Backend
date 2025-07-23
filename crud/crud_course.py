@@ -224,6 +224,13 @@ async def get_course_detail(db: AsyncSession, course_id: int, user_id: str):
                 "estimated_cost": course_place.estimated_cost
             })
         
+        # 커뮤니티 공유 상태 확인
+        from models.shared_course import SharedCourse
+        shared_result = await db.execute(
+            select(SharedCourse).where(SharedCourse.course_id == course.course_id)
+        )
+        is_shared_to_community = shared_result.scalar_one_or_none() is not None
+        
         # 코스 정보에 장소 데이터 추가
         course_dict = {
             "course_id": course.course_id,
@@ -233,6 +240,7 @@ async def get_course_detail(db: AsyncSession, course_id: int, user_id: str):
             "total_duration": course.total_duration,
             "estimated_cost": course.estimated_cost,
             "is_shared_with_couple": course.is_shared_with_couple,
+            "is_shared_to_community": is_shared_to_community,
             "created_at": course.created_at,
             "places": places_data
         }
@@ -241,7 +249,16 @@ async def get_course_detail(db: AsyncSession, course_id: int, user_id: str):
         
     except Exception as e:
         print(f"장소 정보 조회 실패: {e}")
-        # 에러 발생 시에도 코스 기본 정보는 반환
+        # 에러 발생 시에도 코스 기본 정보는 반환 (커뮤니티 공유 상태 포함)
+        try:
+            from models.shared_course import SharedCourse
+            shared_result = await db.execute(
+                select(SharedCourse).where(SharedCourse.course_id == course.course_id)
+            )
+            is_shared_to_community = shared_result.scalar_one_or_none() is not None
+        except:
+            is_shared_to_community = False
+            
         return {
             "course_id": course.course_id,
             "title": course.title,
@@ -250,6 +267,7 @@ async def get_course_detail(db: AsyncSession, course_id: int, user_id: str):
             "total_duration": course.total_duration,
             "estimated_cost": course.estimated_cost,
             "is_shared_with_couple": course.is_shared_with_couple,
+            "is_shared_to_community": is_shared_to_community,
             "created_at": course.created_at,
             "places": []
         }
@@ -456,3 +474,58 @@ async def update_course_title(db: AsyncSession, course_id: int, user_id: str, ti
     await db.commit()
     await db.refresh(course)
     return True
+
+async def copy_course_for_purchase(db: AsyncSession, course_id: int, buyer_user_id: str):
+    """구매한 코스를 구매자의 코스로 복사"""
+    try:
+        # 1. 원본 코스 조회
+        result = await db.execute(select(Course).where(Course.course_id == course_id))
+        original_course = result.scalar_one_or_none()
+        
+        if not original_course:
+            raise Exception(f"원본 코스를 찾을 수 없습니다: {course_id}")
+        
+        # 2. 새로운 코스 생성 (구매자 소유)
+        new_course = Course(
+            user_id=buyer_user_id,
+            title=f"[구매] {original_course.title}",
+            description=original_course.description,
+            total_duration=original_course.total_duration,
+            estimated_cost=original_course.estimated_cost,
+            is_shared_with_couple=False  # 기본값: 공유하지 않음
+        )
+        db.add(new_course)
+        await db.commit()
+        await db.refresh(new_course)
+        
+        # 3. 원본 코스의 모든 장소들 복사
+        from models.course_place import CoursePlace
+        
+        # 원본 코스의 장소들 조회
+        places_result = await db.execute(
+            select(CoursePlace)
+            .where(CoursePlace.course_id == course_id)
+            .order_by(CoursePlace.sequence_order)
+        )
+        original_places = places_result.scalars().all()
+        
+        # 각 장소를 새 코스에 복사
+        for original_place in original_places:
+            new_course_place = CoursePlace(
+                course_id=new_course.course_id,
+                place_id=original_place.place_id,
+                sequence_order=original_place.sequence_order,
+                estimated_duration=original_place.estimated_duration,
+                estimated_cost=original_place.estimated_cost
+            )
+            db.add(new_course_place)
+        
+        await db.commit()
+        
+        print(f"✅ 코스 복사 완료: {original_course.title} → 사용자 {buyer_user_id}")
+        return new_course
+        
+    except Exception as e:
+        print(f"❌ 코스 복사 실패: {e}")
+        await db.rollback()
+        raise e

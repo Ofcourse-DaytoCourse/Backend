@@ -75,8 +75,7 @@ async def get_or_create_user_balance(db: AsyncSession, user_id: str) -> UserBala
         # 새 잔액 레코드 생성
         user_balance = UserBalance(user_id=user_id)
         db.add(user_balance)
-        await db.commit()
-        await db.refresh(user_balance)
+        await db.flush()  # commit 대신 flush 사용
     
     return user_balance
 
