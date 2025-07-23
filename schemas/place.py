@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 
@@ -47,3 +47,14 @@ class PlaceListResponse(BaseModel):
     total_count: int
     skip: int
     limit: int
+
+class AISearchRequest(BaseModel):
+    description: str = Field(..., min_length=20, max_length=200, description="장소 검색 설명 (20-200자)")
+    district: str = Field(..., description="서울시 구 (예: 강남구)")
+    category: Optional[str] = Field(None, description="카테고리 (전체/음식점/카페/문화시설 등)")
+
+class AISearchResponse(BaseModel):
+    places: List[PlaceRead]
+    cost: int = Field(default=300, description="검색 비용 (원)")
+    search_time: float = Field(..., description="검색 소요 시간 (초)")
+    total_results: int = Field(..., description="검색된 총 결과 수")

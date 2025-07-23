@@ -9,6 +9,7 @@ class ActionType(str, Enum):
     DEPOSIT_GENERATE = "deposit_generate"
     REFUND_REQUEST = "refund_request"
     BALANCE_DEDUCT = "balance_deduct"
+    REVIEW_VALIDATION = "review_validation"
 
 # RateLimitLog 스키마
 class RateLimitLogCreate(BaseModel):

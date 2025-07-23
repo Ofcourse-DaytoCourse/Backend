@@ -13,6 +13,9 @@ from models.place_review import PlaceReview
 from schemas.place_review import ReviewCreateRequest, ReviewResponse
 from crud.crud_place_review import place_review
 from controllers.payments_controller import process_review_credit
+from controllers.review_filter_controller import review_filter
+from auth.rate_limiter import rate_limiter, RateLimitException
+from schemas.rate_limit_schema import ActionType
 
 logger = logging.getLogger(__name__)
 
@@ -39,12 +42,58 @@ async def create_place_review(
     - 평점 + 텍스트: 300원 (환불 불가능)  
     - 평점 + 텍스트 + 사진: 500원 (환불 불가능)
     """
-    # 로깅용으로 user_id 미리 저장 (세션 롤백 후에도 사용 가능)
-    user_id = current_user.user_id
-    place_id = review.place_id
-    
     try:
-        # 1. 후기 작성
+        # 로깅용으로 user_id 미리 저장 (세션 롤백 후에도 사용 가능)
+        user_id = current_user.user_id
+        place_id = review.place_id
+        # 1. 후기 검증 (review_text가 있는 경우에만)
+        if review.review_text and review.review_text.strip():
+            print(f"🔍 후기 검증 시작: {review.review_text}")
+            
+            # 먼저 Rate Limit 체크
+            rate_limit_check = await rate_limiter.check_limit(user_id, ActionType.REVIEW_VALIDATION, db)
+            if not rate_limit_check["allowed"]:
+                print(f"🔍 Rate Limit에 걸림 - 검증 없이 차단")
+                raise HTTPException(
+                    status_code=400,
+                    detail="1분 내에 이미 부적절한 후기를 작성하여 제한되었습니다. 잠시 후 다시 시도해주세요."
+                )
+            
+            try:
+                validation_result = await review_filter.validate_place_review(
+                    db, review.place_id, review.review_text
+                )
+                print(f"🔍 검증 결과: {validation_result}")
+                
+                if not validation_result["is_valid"]:
+                    # GPT가 부적절하다고 판단했으므로 Rate Limit 기록
+                    try:
+                        rate_limit_result = await rate_limiter.record_action(
+                            user_id, ActionType.REVIEW_VALIDATION, db
+                        )
+                        await db.commit()  # Rate Limit 기록 커밋
+                        print(f"🔍 Rate Limit 기록 성공")
+                    except Exception as rate_limit_error:
+                        print(f"🔍 Rate Limit 기록 오류: {str(rate_limit_error)}")
+                        await db.rollback()
+                    
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"후기 작성이 거부되었습니다: {validation_result['reason']} (1분 후 다시 시도해주세요)"
+                    )
+            except HTTPException as http_error:
+                print(f"🔍 검증 실패 - 후기 등록 차단: {str(http_error.detail)}")
+                # Rate Limit 기록에서 이미 커밋했으므로 여기서는 롤백하지 않음
+                raise http_error  # HTTPException은 다시 발생시켜서 후기 등록을 막음
+            except Exception as validation_error:
+                print(f"🔍 검증 시스템 오류 발생 - 후기는 등록됨: {str(validation_error)}")
+                print(f"🔍 오류 타입: {type(validation_error)}")
+                import traceback
+                print(f"🔍 전체 스택 트레이스: {traceback.format_exc()}")
+                # 검증 시스템 오류시에만 후기 등록하도록 함 (안전 장치)
+                pass
+        
+        # 2. 후기 작성
         created_review = await place_review.create_review(db, user_id, review)
         is_new_review = True  # 신규 작성
         
@@ -128,8 +177,16 @@ async def create_place_review(
         else:
             # 다른 비즈니스 로직 오류
             raise HTTPException(status_code=400, detail=error_msg)
+    except HTTPException as http_error:
+        # HTTPException은 그대로 전달
+        print(f"🔍 최종 HTTPException 전달: {http_error.status_code} - {http_error.detail}")
+        raise http_error
     except Exception as e:
         # 서버 내부 오류
+        print(f"🔍 전체 함수 예외: {str(e)}")
+        print(f"🔍 예외 타입: {type(e)}")
+        import traceback
+        print(f"🔍 전체 스택 트레이스: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"후기 작성 중 오류가 발생했습니다: {str(e)}")
 
 @router.get("/my", response_model=List[ReviewResponse])

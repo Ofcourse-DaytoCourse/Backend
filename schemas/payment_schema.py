@@ -24,6 +24,7 @@ class ServiceType(str, Enum):
     COURSE_GENERATION = "course_generation"
     PREMIUM_FEATURE = "premium_feature"
     CHAT_SERVICE = "chat_service"
+    AI_SEARCH = "ai_search"
     OTHER = "other"
 
 class RefundRequestStatus(str, Enum):

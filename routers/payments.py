@@ -21,9 +21,32 @@ from schemas.payment_schema import (
 )
 from schemas.refund_schema import RefundRequestCreate
 from auth.dependencies import get_current_user
+from crud.crud_payment import get_user_balance
 
 router = APIRouter(prefix="/api/v1/payments", tags=["payments"])
 logger = logging.getLogger(__name__)
+
+# 사용자 잔액 조회 API
+@router.get("/balance")
+async def get_current_user_balance(
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """사용자 잔액 조회 API"""
+    try:
+        user_balance = await get_user_balance(db, current_user.user_id)
+        
+        if not user_balance:
+            return {"balance": 0}
+        
+        return {"balance": user_balance.current_balance}
+        
+    except Exception as e:
+        logger.error(f"잔액 조회 실패 - user_id: {current_user.user_id}, error: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="잔액 조회 중 서버 오류가 발생했습니다"
+        )
 
 # 7.1.1 POST /deposit/generate - 입금 요청 생성 API
 @router.post("/deposit/generate", response_model=DepositGenerateResponse)

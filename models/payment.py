@@ -78,7 +78,7 @@ class UsageHistory(Base):
     __table_args__ = (
         # CHECK 제약조건
         CheckConstraint('amount > 0', name='chk_usage_amount_positive'),
-        CheckConstraint("service_type IN ('course_generation', 'premium_feature', 'chat_service', 'other', 'refund')", name='chk_usage_service_type_valid'),
+        CheckConstraint("service_type IN ('course_generation', 'premium_feature', 'chat_service', 'ai_search', 'other', 'refund')", name='chk_usage_service_type_valid'),
         
         # 인덱스 설정
         Index('idx_usage_histories_user_id', 'user_id'),

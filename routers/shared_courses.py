@@ -23,6 +23,9 @@ from controllers.payments_controller import (
     process_creator_save_reward,
     process_buyer_review_credit
 )
+from controllers.review_filter_controller import review_filter
+from auth.rate_limiter import rate_limiter, RateLimitException
+from schemas.rate_limit_schema import ActionType
 
 router = APIRouter(prefix="/shared_courses", tags=["shared_courses"])
 
@@ -53,12 +56,59 @@ async def create_shared_course(
         )
     
     try:
-        # 3. 공유 코스 생성
+        # 3. 공유자 후기 검증 먼저 실행 (review_text가 있는 경우에만) - 장소별 후기와 동일한 순서
+        if review_data.review_text and review_data.review_text.strip():
+            print(f"🔍 후기 검증 시작: {review_data.review_text}")
+            
+            # 먼저 Rate Limit 체크
+            rate_limit_check = await rate_limiter.check_limit(current_user.user_id, ActionType.REVIEW_VALIDATION, db)
+            if not rate_limit_check["allowed"]:
+                print(f"🔍 Rate Limit에 걸림 - 검증 없이 차단")
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="1분 내에 이미 부적절한 후기를 작성하여 제한되었습니다. 잠시 후 다시 시도해주세요."
+                )
+            
+            try:
+                validation_result = await review_filter.validate_shared_course_review(
+                    db, shared_course_data.course_id, review_data.review_text
+                )
+                print(f"🔍 검증 결과: {validation_result}")
+                
+                if not validation_result["is_valid"]:
+                    # GPT가 부적절하다고 판단했으므로 Rate Limit 기록
+                    try:
+                        rate_limit_result = await rate_limiter.record_action(
+                            current_user.user_id, ActionType.REVIEW_VALIDATION, db
+                        )
+                        await db.commit()  # Rate Limit 기록 커밋
+                        print(f"🔍 Rate Limit 기록 성공")
+                    except Exception as rate_limit_error:
+                        print(f"🔍 Rate Limit 기록 오류: {str(rate_limit_error)}")
+                        await db.rollback()
+                    
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"후기 작성이 거부되었습니다: {validation_result['reason']} (1분 후 다시 시도해주세요)"
+                    )
+            except HTTPException as http_error:
+                print(f"🔍 검증 실패 - 코스 공유 차단: {str(http_error.detail)}")
+                # Rate Limit 기록에서 이미 커밋했으므로 여기서는 롤백하지 않음
+                raise http_error  # HTTPException은 다시 발생시켜서 코스 공유를 막음
+            except Exception as validation_error:
+                print(f"🔍 검증 시스템 오류 발생 - 코스는 공유됨: {str(validation_error)}")
+                print(f"🔍 오류 타입: {type(validation_error)}")
+                import traceback
+                print(f"🔍 전체 스택 트레이스: {traceback.format_exc()}")
+                # 검증 시스템 오류시에만 코스 공유하도록 함 (안전 장치)
+                pass
+        
+        # 4. 검증 통과 후 공유 코스 생성
         shared_course = await crud_shared_course.create_shared_course(
             db, shared_course_data, current_user.user_id
         )
         
-        # 4. 공유자 후기 작성
+        # 5. 공유자 후기 작성
         # SharedCourseReviewForCreate를 SharedCourseReviewCreate로 변환
         review_create_data = SharedCourseReviewCreate(
             shared_course_id=shared_course.id,
@@ -82,6 +132,10 @@ async def create_shared_course(
         await db.refresh(shared_course)
         return shared_course
         
+    except HTTPException as http_error:
+        # HTTPException은 그대로 전달
+        await db.rollback()
+        raise http_error
     except Exception as e:
         await db.rollback()  # 실패 시 모든 변경사항 롤백
         raise HTTPException(
@@ -94,7 +148,7 @@ async def create_shared_course(
 async def get_shared_courses(
     skip: int = 0,
     limit: int = 20,
-    sort_by: str = "latest",
+    sort_by: str = "purchase_count_desc",
     category: Optional[str] = None,
     min_rating: Optional[float] = None,
     db: AsyncSession = Depends(get_db)
@@ -472,13 +526,92 @@ async def create_buyer_review(
         db, review_data.purchase_id, current_user.user_id
     )
     if existing_review:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="이미 후기를 작성하셨습니다."
-        )
+        # 중복 후기 오류 시 재활성화 시도
+        try:
+            print(f"🔍 중복 후기 오류 감지, 재활성화 시도: {current_user.user_id}, shared_course_id: {review_data.shared_course_id}")
+            
+            # 삭제된 후기 재활성화 시도
+            reactivated_review = await crud_shared_course.reactivate_deleted_course_buyer_review(
+                db, current_user.user_id, review_data.shared_course_id, review_data
+            )
+            
+            if reactivated_review:
+                print(f"🔍 커뮤니티 코스 후기 재활성화 완료: {current_user.user_id}, 후기 ID: {reactivated_review.id}")
+                
+                # 재활성화된 경우 크레딧은 지급하지 않음 (이미 받았음)
+                print(f"🔍 재활성화된 후기이므로 크레딧 지급하지 않음: {current_user.user_id}")
+                
+                # 응답에 필수 필드 추가
+                return {
+                    "id": reactivated_review.id,
+                    "buyer_user_id": reactivated_review.buyer_user_id,
+                    "shared_course_id": reactivated_review.shared_course_id,
+                    "purchase_id": reactivated_review.purchase_id,
+                    "rating": reactivated_review.rating,
+                    "review_text": reactivated_review.review_text,
+                    "tags": reactivated_review.tags,
+                    "photo_urls": reactivated_review.photo_urls,
+                    "is_deleted": reactivated_review.is_deleted,
+                    "credit_given": False,  # 재활성화된 경우 크레딧 지급 안함
+                    "created_at": reactivated_review.created_at.isoformat(),
+                    "updated_at": reactivated_review.updated_at.isoformat(),
+                    "is_reactivated": True
+                }
+            else:
+                # 삭제된 후기도 없으면 원래 오류 발생
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="이미 후기를 작성하셨습니다."
+                )
+        except Exception as reactivate_error:
+            print(f"🔍 커뮤니티 코스 후기 재활성화 실패: {current_user.user_id}, {str(reactivate_error)}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="이미 후기를 작성하셨습니다."
+            )
     
     try:
-        # 3. 후기 작성
+        # 3. 구매 후기 검증 (review_text가 있는 경우에만)
+        if review_data.review_text and review_data.review_text.strip():
+            # 먼저 Rate Limit 체크
+            rate_limit_check = await rate_limiter.check_limit(current_user.user_id, ActionType.REVIEW_VALIDATION, db)
+            if not rate_limit_check["allowed"]:
+                print(f"🔍 Rate Limit에 걸림 - 검증 없이 차단")
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="1분 내에 이미 부적절한 후기를 작성하여 제한되었습니다. 잠시 후 다시 시도해주세요."
+                )
+            
+            try:
+                validation_result = await review_filter.validate_buyer_review(
+                    db, review_data.shared_course_id, review_data.review_text
+                )
+                
+                if not validation_result["is_valid"]:
+                    # GPT가 부적절하다고 판단했으므로 Rate Limit 기록
+                    try:
+                        rate_limit_result = await rate_limiter.record_action(
+                            current_user.user_id, ActionType.REVIEW_VALIDATION, db
+                        )
+                        await db.commit()  # Rate Limit 기록 커밋
+                        print(f"🔍 Rate Limit 기록 성공")
+                    except Exception as rate_limit_error:
+                        print(f"🔍 Rate Limit 기록 오류: {str(rate_limit_error)}")
+                        await db.rollback()
+                    
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"후기 작성이 거부되었습니다: {validation_result['reason']} (1분 후 다시 시도해주세요)"
+                    )
+            except HTTPException as http_error:
+                # Rate Limit 기록에서 이미 커밋했으므로 여기서는 롤백하지 않음
+                raise http_error  # HTTPException은 다시 발생시켜서 후기 등록을 막음
+            except Exception as validation_error:
+                print(f"🔍 후기 검증 시스템 오류 발생 - 후기는 등록됨: {str(validation_error)}")
+                # 검증 시스템 오류시에만 후기 등록하도록 함 (안전 장치)
+                pass
+        
+        # 4. 후기 작성
         review = await crud_shared_course.create_course_buyer_review(
             db, review_data, current_user.user_id
         )
@@ -493,8 +626,27 @@ async def create_buyer_review(
         await db.commit()
         await db.refresh(review)
         
-        return review
+        # 응답에 필수 필드 추가
+        return {
+            "id": review.id,
+            "buyer_user_id": review.buyer_user_id,
+            "shared_course_id": review.shared_course_id,
+            "purchase_id": review.purchase_id,
+            "rating": review.rating,
+            "review_text": review.review_text,
+            "tags": review.tags,
+            "photo_urls": review.photo_urls,
+            "is_deleted": review.is_deleted,
+            "credit_given": True,  # 크레딧 지급 완료
+            "created_at": review.created_at.isoformat(),
+            "updated_at": review.updated_at.isoformat(),
+            "is_reactivated": False
+        }
         
+    except HTTPException as http_error:
+        # HTTPException은 그대로 전달
+        await db.rollback()
+        raise http_error
     except Exception as e:
         await db.rollback()
         raise HTTPException(
@@ -515,3 +667,68 @@ async def get_course_buyer_reviews(
         db, shared_course_id, skip, limit
     )
     return reviews
+
+
+@router.put("/reviews/buyer/{review_id}", response_model=CourseBuyerReviewResponse)
+async def update_course_buyer_review(
+    review_id: int,
+    review_data: dict,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    커뮤니티 코스 후기 수정 API
+    
+    - **review_id**: 수정할 후기 ID
+    - **review_data**: 수정할 데이터
+    """
+    try:
+        updated_review = await crud_shared_course.update_course_buyer_review(db, review_id, current_user.user_id, review_data)
+        if not updated_review:
+            raise HTTPException(status_code=404, detail="후기를 찾을 수 없거나 수정 권한이 없습니다.")
+        return updated_review
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"커뮤니티 코스 후기 수정 중 오류가 발생했습니다: {str(e)}")
+
+
+@router.delete("/reviews/buyer/{review_id}")
+async def delete_course_buyer_review(
+    review_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    커뮤니티 코스 후기 삭제 API
+    
+    - **review_id**: 삭제할 후기 ID
+    """
+    try:
+        deleted_review = await crud_shared_course.delete_course_buyer_review(db, review_id, current_user.user_id)
+        if not deleted_review:
+            raise HTTPException(status_code=404, detail="후기를 찾을 수 없거나 삭제 권한이 없습니다.")
+        return {"status": "success", "message": "커뮤니티 코스 후기가 삭제되었습니다."}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"커뮤니티 코스 후기 삭제 중 오류가 발생했습니다: {str(e)}")
+
+
+@router.get("/reviews/buyer/my", response_model=List[CourseBuyerReviewResponse])
+async def get_my_course_buyer_reviews(
+    skip: int = 0,
+    limit: int = 20,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    내가 작성한 커뮤니티 코스 후기 조회 API
+    
+    - **skip**: 건너뛸 항목 수 (페이지네이션)
+    - **limit**: 가져올 항목 수 (최대 20)
+    """
+    try:
+        return await crud_shared_course.get_my_course_buyer_reviews(db, current_user.user_id, skip, limit)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"내 커뮤니티 코스 후기 조회 중 오류가 발생했습니다: {str(e)}")

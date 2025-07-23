@@ -75,6 +75,12 @@ RATE_LIMIT_RULES = {
         "period_minutes": 1,
         "message": "서비스 이용은 1분에 10회까지 가능합니다",
         "description": "서버 부하 방지를 위한 제한입니다"
+    },
+    ActionType.REVIEW_VALIDATION: {
+        "max_attempts": 1,
+        "period_minutes": 1,
+        "message": "후기 검증 실패 후 1분 후에 다시 시도해주세요",
+        "description": "부적절한 후기 재작성 방지"
     }
 }
 

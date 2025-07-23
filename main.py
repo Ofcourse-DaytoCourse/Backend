@@ -11,6 +11,7 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from routers import users, courses, couples, comments, auth, chat, payments, sms, admin, places, reviews, shared_courses
 import config  # config.py의 설정 불러오기
+from services.cache_scheduler import cache_scheduler
 
 # ✅ 모든 모델 임포트 (SQLAlchemy 관계 설정을 위해 필수)
 from models.base import Base
@@ -68,6 +69,21 @@ app.include_router(admin.router)
 app.include_router(places.router)
 app.include_router(reviews.router)
 app.include_router(shared_courses.router)
+
+# 애플리케이션 시작/종료 이벤트
+@app.on_event("startup")
+async def startup_event():
+    """서버 시작 시 실행"""
+    print("🚀 FastAPI 서버 시작")
+    print("🔥 캐시 스케줄러 시작 중...")
+    cache_scheduler.start()
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """서버 종료 시 실행"""
+    print("🛑 FastAPI 서버 종료")
+    print("🛑 캐시 스케줄러 정지 중...")
+    cache_scheduler.stop()
 
 # 검증 에러 핸들러 추가 (로깅용)
 @app.exception_handler(RequestValidationError)

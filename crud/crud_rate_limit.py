@@ -24,6 +24,11 @@ RATE_LIMIT_CONFIGS = {
         "max_attempts": 10,
         "period_minutes": 1,
         "description": "서비스 이용은 1분에 10회까지 가능합니다"
+    },
+    ActionType.REVIEW_VALIDATION: {
+        "max_attempts": 1,
+        "period_minutes": 1,
+        "description": "후기 검증 실패 후 1분 후에 다시 시도해주세요"
     }
 }
 

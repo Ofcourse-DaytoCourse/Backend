@@ -39,6 +39,15 @@ CONFIGS = {
         "rate_limit_log_retention_hours": int(os.getenv("RATE_LIMIT_LOG_RETENTION_HOURS", "24")),
         "unmatched_deposit_retention_days": int(os.getenv("UNMATCHED_DEPOSIT_RETENTION_DAYS", "180")),
         "cleanup_schedule_hours": int(os.getenv("CLEANUP_SCHEDULE_HOURS", "1")),
+        
+        # 후기 검증 시스템 설정
+        "openai_api_key": os.getenv("OPENAI_API_KEY"),
+        "review_validation_enabled": os.getenv("REVIEW_VALIDATION_ENABLED", "true").lower() == "true",
+        "review_validation_model": os.getenv("REVIEW_VALIDATION_MODEL", "gpt-3.5-turbo"),
+        "review_validation_max_tokens": int(os.getenv("REVIEW_VALIDATION_MAX_TOKENS", "150")),
+        
+        # RAG 서비스 설정
+        "rag_service_url": os.getenv("RAG_SERVICE_URL", "http://localhost:8003"),
     },
     "production": {
         "api_url": "https://api.example.com",

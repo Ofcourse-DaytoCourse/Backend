@@ -7,14 +7,15 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from typing import List, Optional
+import time
+import httpx
 
 from db.session import get_db
 from models.place import Place
 from models.place_category import PlaceCategory
-from schemas.place import PlaceRead, PlaceListResponse
+from schemas.place import PlaceRead, PlaceListResponse, AISearchRequest, AISearchResponse
 from crud.crud_place import place as place_crud
-from auth.dependencies import get_current_user
-from models.user import User
+from config import config
 
 router = APIRouter(prefix="/places", tags=["places"])
 
@@ -26,7 +27,7 @@ async def get_places(
     category_id: Optional[int] = Query(None, description="카테고리 ID"),
     search: Optional[str] = Query(None, description="장소명 검색어"),
     region: Optional[str] = Query(None, description="지역 필터 (구 단위)"),
-    sort_by: Optional[str] = Query("name", description="정렬 방식: name, rating_desc, review_count_desc, latest"),
+    sort_by: Optional[str] = Query("review_count_desc", description="정렬 방식: name, rating_desc, review_count_desc, latest"),
     min_rating: Optional[float] = Query(None, ge=0, le=5, description="최소 평점 필터"),
     has_parking: Optional[bool] = Query(None, description="주차 가능 여부 필터"),
     has_phone: Optional[bool] = Query(None, description="전화번호 유무 필터"),
@@ -138,3 +139,64 @@ async def get_place_categories(
         ]
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"카테고리 조회 중 오류가 발생했습니다: {str(e)}")
+
+
+@router.post("/ai-search", response_model=AISearchResponse)
+async def ai_search_places(
+    request: AISearchRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    AI 설명 기반 장소 검색 API
+    
+    - **description**: 장소 검색 설명 (20-200자)
+    - **district**: 서울시 구 (예: 강남구)
+    - **category**: 카테고리 (선택사항)
+    
+    주의: 사용 전 프론트엔드에서 300원 사전 결제 필요
+    """
+    start_time = time.time()
+    
+    try:
+        # RAG 서비스 호출
+        rag_service_url = config.get("rag_service_url", "http://localhost:8003")
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            rag_response = await client.post(
+                f"{rag_service_url}/search-places-by-description",
+                json={
+                    "description": request.description,
+                    "district": request.district,
+                    "category": request.category
+                }
+            )
+            rag_response.raise_for_status()
+            rag_data = rag_response.json()
+        
+        # place_id로 DB 조회
+        place_ids = rag_data.get("place_ids", [])
+        if not place_ids:
+            return AISearchResponse(
+                places=[],
+                cost=300,
+                search_time=time.time() - start_time,
+                total_results=0
+            )
+        
+        places = await place_crud.get_places_by_ids(db, place_ids[:20])  # 최대 20개
+        
+        return AISearchResponse(
+            places=places,
+            cost=300,
+            search_time=time.time() - start_time,
+            total_results=len(places)
+        )
+        
+    except httpx.RequestError as e:
+        raise HTTPException(status_code=503, detail="AI 검색 서비스가 일시적으로 사용할 수 없습니다.")
+    
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(status_code=503, detail="AI 검색 서비스에서 오류가 발생했습니다.")
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"검색 중 오류가 발생했습니다: {str(e)}")
+

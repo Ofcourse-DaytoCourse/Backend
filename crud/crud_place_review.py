@@ -2,6 +2,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from models.place_review import PlaceReview
 from schemas.place_review import ReviewCreateRequest
+from utils.redis_client import redis_client
 
 class CRUDPlaceReview:
     async def create_review(self, db: AsyncSession, user_id: str, review: ReviewCreateRequest):
@@ -43,6 +44,9 @@ class CRUDPlaceReview:
             db.add(db_review)
             await db.commit()
             await db.refresh(db_review)
+            
+            # 캐시는 20분마다 자동 갱신되므로 즉시 삭제하지 않음
+            
             return db_review
             
         except Exception as e:
@@ -106,6 +110,9 @@ class CRUDPlaceReview:
         
         await db.commit()
         await db.refresh(db_review)
+        
+        # 캐시는 20분마다 자동 갱신되므로 즉시 삭제하지 않음
+        
         return db_review
 
     async def delete_review(self, db: AsyncSession, review_id: int, user_id: str):
@@ -123,6 +130,9 @@ class CRUDPlaceReview:
         db_review.is_deleted = True
         await db.commit()
         await db.refresh(db_review)
+        
+        # 캐시는 20분마다 자동 갱신되므로 즉시 삭제하지 않음
+        
         return db_review
 
     async def reactivate_deleted_review(self, db: AsyncSession, user_id: str, place_id: str, new_review_data):
@@ -150,6 +160,10 @@ class CRUDPlaceReview:
             
             await db.commit()
             await db.refresh(deleted_review)
+            
+            # 장소 목록 캐시 무효화
+            self._invalidate_places_cache()
+            
             return deleted_review
             
         except Exception as e:

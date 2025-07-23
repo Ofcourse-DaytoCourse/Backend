@@ -401,7 +401,7 @@ CREATE TABLE usage_histories (
     usage_history_id SERIAL PRIMARY KEY,
     user_id VARCHAR(36) NOT NULL,
     amount INTEGER NOT NULL CHECK (amount > 0),
-    service_type VARCHAR(50) NOT NULL CHECK (service_type IN ('course_generation', 'premium_feature', 'chat_service', 'other')),
+    service_type VARCHAR(50) NOT NULL CHECK (service_type IN ('course_generation', 'premium_feature', 'chat_service', 'ai_search', 'other', 'refund')),
     service_id VARCHAR(50),
     description TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -631,7 +631,7 @@ SELECT '✅ 1.4.1 금액 필드 > 0 검증 완료' AS status;
 -- 이미 테이블 생성 시 CHECK 제약조건 추가됨:
 -- ✅ deposit_requests: status IN ('pending', 'completed', 'expired', 'failed')
 -- ✅ charge_histories: source_type IN ('deposit', 'bonus', 'refund', 'admin'), refund_status IN ('available', 'partially_refunded', 'fully_refunded', 'unavailable')
--- ✅ usage_histories: service_type IN ('course_generation', 'premium_feature', 'chat_service', 'other')
+-- ✅ usage_histories: service_type IN ('course_generation', 'premium_feature', 'chat_service', 'ai_search', 'other', 'refund')
 -- ✅ unmatched_deposits: status IN ('unmatched', 'matched', 'ignored')
 -- ✅ refund_requests: status IN ('pending', 'approved', 'rejected', 'completed')
 -- ✅ sms_logs: processing_status IN ('received', 'processed', 'failed', 'ignored')
@@ -823,7 +823,7 @@ CREATE TABLE usage_histories (
     usage_history_id SERIAL PRIMARY KEY,
     user_id VARCHAR(36) NOT NULL,
     amount INTEGER NOT NULL CHECK (amount > 0),
-    service_type VARCHAR(50) NOT NULL CHECK (service_type IN ('course_generation', 'premium_feature', 'chat_service', 'other')),
+    service_type VARCHAR(50) NOT NULL CHECK (service_type IN ('course_generation', 'premium_feature', 'chat_service', 'ai_search', 'other', 'refund')),
     service_id VARCHAR(50),
     description TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -1053,7 +1053,7 @@ SELECT '✅ 1.4.1 금액 필드 > 0 검증 완료' AS status;
 -- 이미 테이블 생성 시 CHECK 제약조건 추가됨:
 -- ✅ deposit_requests: status IN ('pending', 'completed', 'expired', 'failed')
 -- ✅ charge_histories: source_type IN ('deposit', 'bonus', 'refund', 'admin'), refund_status IN ('available', 'partially_refunded', 'fully_refunded', 'unavailable')
--- ✅ usage_histories: service_type IN ('course_generation', 'premium_feature', 'chat_service', 'other')
+-- ✅ usage_histories: service_type IN ('course_generation', 'premium_feature', 'chat_service', 'ai_search', 'other', 'refund')
 -- ✅ unmatched_deposits: status IN ('unmatched', 'matched', 'ignored')
 -- ✅ refund_requests: status IN ('pending', 'approved', 'rejected', 'completed')
 -- ✅ sms_logs: processing_status IN ('received', 'processed', 'failed', 'ignored')
@@ -1245,7 +1245,7 @@ CREATE TABLE usage_histories (
     usage_history_id SERIAL PRIMARY KEY,
     user_id VARCHAR(36) NOT NULL,
     amount INTEGER NOT NULL CHECK (amount > 0),
-    service_type VARCHAR(50) NOT NULL CHECK (service_type IN ('course_generation', 'premium_feature', 'chat_service', 'other')),
+    service_type VARCHAR(50) NOT NULL CHECK (service_type IN ('course_generation', 'premium_feature', 'chat_service', 'ai_search', 'other', 'refund')),
     service_id VARCHAR(50),
     description TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -1475,7 +1475,7 @@ SELECT '✅ 1.4.1 금액 필드 > 0 검증 완료' AS status;
 -- 이미 테이블 생성 시 CHECK 제약조건 추가됨:
 -- ✅ deposit_requests: status IN ('pending', 'completed', 'expired', 'failed')
 -- ✅ charge_histories: source_type IN ('deposit', 'bonus', 'refund', 'admin'), refund_status IN ('available', 'partially_refunded', 'fully_refunded', 'unavailable')
--- ✅ usage_histories: service_type IN ('course_generation', 'premium_feature', 'chat_service', 'other')
+-- ✅ usage_histories: service_type IN ('course_generation', 'premium_feature', 'chat_service', 'ai_search', 'other', 'refund')
 -- ✅ unmatched_deposits: status IN ('unmatched', 'matched', 'ignored')
 -- ✅ refund_requests: status IN ('pending', 'approved', 'rejected', 'completed')
 -- ✅ sms_logs: processing_status IN ('received', 'processed', 'failed', 'ignored')

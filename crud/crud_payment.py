@@ -499,3 +499,59 @@ async def get_payment_statistics(
         "total_refunded": total_refunded,
         "net_balance": total_charged - total_used - total_refunded
     }
+
+# AI 검색을 위한 간단한 결제 함수들
+async def deduct_ai_search_balance(
+    db: AsyncSession,
+    user_id: str,
+    amount: int = 300,
+    description: str = "AI 장소 검색",
+    service_type: str = "ai_search"
+) -> Tuple[UserBalance, UsageHistory]:
+    """AI 검색 결제 처리"""
+    from schemas.payment_schema import BalanceDeductRequest, ServiceType
+    
+    balance_data = BalanceDeductRequest(
+        amount=amount,
+        service_type=ServiceType.AI_SEARCH,
+        service_id="ai_place_search",
+        description=description
+    )
+    
+    return await deduct_balance(db, user_id, balance_data)
+
+async def refund_ai_search_balance(
+    db: AsyncSession,
+    user_id: str,
+    amount: int = 300,
+    reason: str = "AI 검색 오류로 인한 자동 환불",
+    auto_refund: bool = True
+) -> UserBalance:
+    """AI 검색 자동 환불 처리"""
+    from schemas.payment_schema import BalanceAddRequest
+    
+    balance_data = BalanceAddRequest(
+        amount=amount,
+        is_refundable=False,  # 환불은 재환불 불가
+        description=reason
+    )
+    
+    return await add_balance(db, user_id, balance_data)
+
+class CRUDPayment:
+    """결제 관련 CRUD 작업 클래스"""
+    
+    # 기존 함수들을 메서드로 래핑
+    deduct_balance = staticmethod(deduct_ai_search_balance)
+    refund_balance = staticmethod(refund_ai_search_balance)
+    get_user_balance = staticmethod(get_user_balance)
+    add_balance = staticmethod(add_balance)
+    create_charge_history = staticmethod(create_charge_history)
+    create_usage_history = staticmethod(create_usage_history)
+    update_user_balance = staticmethod(update_user_balance)
+    create_refund_request = staticmethod(create_refund_request)
+    get_refundable_amount = staticmethod(get_refundable_amount)
+    process_refund = staticmethod(process_refund)
+
+# 싱글톤 인스턴스 생성
+payment = CRUDPayment()
