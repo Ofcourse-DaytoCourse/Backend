@@ -5,7 +5,7 @@
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, distinct
 from typing import List, Optional
 import time
 import httpx
@@ -31,6 +31,9 @@ async def get_places(
     min_rating: Optional[float] = Query(None, ge=0, le=5, description="최소 평점 필터"),
     has_parking: Optional[bool] = Query(None, description="주차 가능 여부 필터"),
     has_phone: Optional[bool] = Query(None, description="전화번호 유무 필터"),
+    major_category: Optional[str] = Query(None, description="대분류"),
+    middle_category: Optional[str] = Query(None, description="중분류"), 
+    minor_category: Optional[str] = Query(None, description="소분류"),
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -57,7 +60,10 @@ async def get_places(
             sort_by=sort_by,
             min_rating=min_rating,
             has_parking=has_parking,
-            has_phone=has_phone
+            has_phone=has_phone,
+            major_category=major_category,
+            middle_category=middle_category,
+            minor_category=minor_category
         )
         
         return PlaceListResponse(
@@ -151,7 +157,9 @@ async def ai_search_places(
     
     - **description**: 장소 검색 설명 (20-200자)
     - **district**: 서울시 구 (예: 강남구)
-    - **category**: 카테고리 (선택사항)
+    - **major_category**: 대분류 (선택사항)
+    - **middle_category**: 중분류 (선택사항)
+    - **minor_category**: 소분류 (선택사항)
     
     주의: 사용 전 프론트엔드에서 300원 사전 결제 필요
     """
@@ -166,7 +174,9 @@ async def ai_search_places(
                 json={
                     "description": request.description,
                     "district": request.district,
-                    "category": request.category
+                    "major_category": request.major_category,
+                    "middle_category": request.middle_category,
+                    "minor_category": request.minor_category
                 }
             )
             rag_response.raise_for_status()
@@ -199,4 +209,53 @@ async def ai_search_places(
     
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"검색 중 오류가 발생했습니다: {str(e)}")
+
+
+@router.get("/categories/major")
+async def get_major_categories(db: AsyncSession = Depends(get_db)):
+    """대분류 카테고리 목록 조회"""
+    result = await db.execute(
+        select(distinct(Place.major_category))
+        .where(Place.major_category.isnot(None))
+        .order_by(Place.major_category)
+    )
+    categories = [cat[0] for cat in result.fetchall()]
+    return {"categories": categories}
+
+
+@router.get("/categories/middle")
+async def get_middle_categories(
+    major_category: Optional[str] = Query(None, description="대분류로 필터링"),
+    db: AsyncSession = Depends(get_db)
+):
+    """중분류 카테고리 목록 조회"""
+    query = select(distinct(Place.middle_category)).where(Place.middle_category.isnot(None))
+    
+    if major_category:
+        query = query.where(Place.major_category == major_category)
+    
+    query = query.order_by(Place.middle_category)
+    result = await db.execute(query)
+    categories = [cat[0] for cat in result.fetchall()]
+    return {"categories": categories}
+
+
+@router.get("/categories/minor") 
+async def get_minor_categories(
+    major_category: Optional[str] = Query(None, description="대분류로 필터링"),
+    middle_category: Optional[str] = Query(None, description="중분류로 필터링"),
+    db: AsyncSession = Depends(get_db)
+):
+    """소분류 카테고리 목록 조회"""
+    query = select(distinct(Place.minor_category)).where(Place.minor_category.isnot(None))
+    
+    if major_category:
+        query = query.where(Place.major_category == major_category)
+    if middle_category:
+        query = query.where(Place.middle_category == middle_category)
+        
+    query = query.order_by(Place.minor_category)
+    result = await db.execute(query)
+    categories = [cat[0] for cat in result.fetchall()]
+    return {"categories": categories}
 

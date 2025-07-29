@@ -14,6 +14,7 @@ class Course(Base):
     estimated_cost = Column(Integer, nullable=True)
     is_shared_with_couple = Column(Boolean, nullable=False, server_default="false")
     comments = Column(JSON, nullable=True, server_default="[]")
+    is_deleted = Column(Boolean, nullable=False, server_default="false")
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
     

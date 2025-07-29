@@ -23,6 +23,16 @@ class Place(Base):
     summary = Column(Text, nullable=True)
     info_urls = Column(JSON, nullable=True, server_default="[]")
     category_id = Column(BigInteger, ForeignKey("place_category.category_id"), nullable=True)  # nullable=True로 변경
+    
+    # 새로 추가할 필드들
+    business_hours = Column(JSON, nullable=True, server_default="{}")
+    menu_info = Column(JSON, nullable=True, server_default="[]") 
+    homepage_url = Column(String(500), nullable=True)
+    kakao_category = Column(String(100), nullable=True)
+    major_category = Column(String(50), nullable=True)    # 대분류
+    middle_category = Column(String(50), nullable=True)   # 중분류  
+    minor_category = Column(String(50), nullable=True)    # 소분류
+    
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
     

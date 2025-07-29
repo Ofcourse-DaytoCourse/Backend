@@ -20,10 +20,10 @@ class CacheScheduler:
             return
             
         try:
-            # 20분마다 캐시 갱신 작업 등록
+            # 10분마다 캐시 갱신 작업 등록
             self.scheduler.add_job(
                 func=self._refresh_popular_places_cache,
-                trigger=IntervalTrigger(minutes=20),
+                trigger=IntervalTrigger(minutes=10),
                 id='refresh_places_cache',
                 name='장소 목록 캐시 갱신',
                 replace_existing=True,
@@ -32,7 +32,7 @@ class CacheScheduler:
             
             self.scheduler.start()
             self.is_running = True
-            print("✅ 캐시 스케줄러 시작 - 20분마다 캐시 갱신")
+            print("✅ 캐시 스케줄러 시작 - 10분마다 캐시 갱신")
             
             # 서버 시작 시 초기 캐시 생성
             asyncio.create_task(self._initial_cache_warmup())
@@ -122,6 +122,10 @@ class CacheScheduler:
     
     async def _refresh_shared_courses_cache(self, db):
         """커뮤니티 코스 캐시 갱신"""
+        # 모든 shared_courses 관련 캐시를 먼저 삭제
+        print("🗑️ 모든 shared_courses 캐시 삭제 중...")
+        redis_client.delete(pattern="shared_courses_list:*")
+        
         # 커뮤니티 코스 주요 조합들
         shared_course_combinations = [
             # 기본 구매 많은 순
@@ -142,28 +146,71 @@ class CacheScheduler:
         
         for params in shared_course_combinations:
             try:
-                # 기존 캐시 키 생성
+                # 직접 DB에서 데이터 조회하여 캐시 강제 갱신
+                from sqlalchemy import text
+                
+                # 기본 쿼리 (get_shared_courses_stats와 동일)
+                query = """
+                    SELECT shared_course_id as id, shared_course_id, title, shared_by_user_id, 
+                           view_count, purchase_count, save_count, price, shared_at,
+                           creator_rating, creator_review_text, buyer_review_count, 
+                           avg_buyer_rating, overall_rating
+                    FROM shared_course_stats 
+                    WHERE 1=1
+                """
+                
+                # 정렬 조건
+                sort_by = params.get('sort_by', 'purchase_count_desc')
+                if sort_by == "latest":
+                    query += " ORDER BY shared_at DESC"
+                elif sort_by == "popular":
+                    query += " ORDER BY view_count DESC"
+                elif sort_by == "rating":
+                    query += " ORDER BY overall_rating DESC"
+                elif sort_by == "purchases" or sort_by == "purchase_count_desc":
+                    query += " ORDER BY purchase_count DESC"
+                else:
+                    query += " ORDER BY purchase_count DESC"
+                
+                # 페이징
+                skip = params.get('skip', 0)
+                limit = params.get('limit', 20)
+                query += f" LIMIT {limit} OFFSET {skip}"
+                
+                # 데이터 조회
+                result = await db.execute(text(query))
+                raw_courses = result.fetchall()
+                
+                # 총 개수 조회
+                count_result = await db.execute(text("SELECT COUNT(*) as total FROM shared_course_stats"))
+                total_count = count_result.scalar()
+                
+                # 데이터 변환
+                from crud.crud_shared_course import _convert_raw_to_dict
+                courses = [_convert_raw_to_dict(row) for row in raw_courses]
+                
+                # 캐시 키 생성 및 저장
                 cache_key = _generate_shared_courses_cache_key(
-                    skip=params.get('skip', 0),
-                    limit=params.get('limit', 20),
-                    sort_by=params.get('sort_by', 'purchase_count_desc'),
+                    skip=skip,
+                    limit=limit,
+                    sort_by=sort_by,
                     category=params.get('category'),
                     min_rating=params.get('min_rating')
                 )
                 
-                # 기존 캐시 삭제
-                redis_client.delete(key=cache_key)
-                
-                # 새로운 데이터 조회 및 캐시 저장
-                courses, total_count = await get_shared_courses_stats(
-                    db=db,
-                    **params
-                )
+                cache_data = {
+                    'courses': courses,
+                    'total_count': total_count
+                }
+                redis_client.set(cache_key, cache_data)
+                print(f"💾 강제 캐시 갱신: {cache_key} ({len(courses)}개 코스)")
                 
                 refreshed_count += 1
                 
             except Exception as e:
                 print(f"❌ 커뮤니티 코스 캐시 갱신 실패 (조합: {params}): {e}")
+                import traceback
+                traceback.print_exc()
                 continue
         
         print(f"🔄 커뮤니티 코스 캐시 {refreshed_count}개 조합 갱신 완료")
@@ -172,12 +219,41 @@ class CacheScheduler:
         """서버 시작 시 초기 캐시 생성"""
         try:
             print("🔥 서버 시작 - 초기 캐시 생성 중...")
+            
+            # 서버 시작시 모든 shared_courses 캐시 삭제
+            await self._clear_shared_courses_cache()
+            
             await asyncio.sleep(3)  # 서버 완전 시작 대기
             await self._async_refresh_all_cache()
             print("🔥 초기 캐시 생성 완료!")
             
         except Exception as e:
             print(f"❌ 초기 캐시 생성 실패: {e}")
+    
+    async def _clear_shared_courses_cache(self):
+        """서버 시작시 모든 shared_courses 캐시 삭제"""
+        try:
+            # Redis에서 shared_courses 관련 모든 캐시 키 조회
+            import subprocess
+            result = subprocess.run(['redis-cli', 'KEYS', '*shared*'], 
+                                  capture_output=True, text=True)
+            
+            if result.returncode == 0 and result.stdout.strip():
+                cache_keys = result.stdout.strip().split('\n')
+                
+                # 각 캐시 키 삭제
+                for key in cache_keys:
+                    if key.strip():  # 빈 키 제외
+                        redis_client.delete(key=key.strip())
+                        print(f"🗑️ Redis 캐시 삭제: {key.strip()}")
+                
+                print(f"🗑️ 총 {len([k for k in cache_keys if k.strip()])}개 shared_courses 캐시 삭제 완료")
+            else:
+                print("🔍 삭제할 shared_courses 캐시가 없습니다")
+                
+        except Exception as e:
+            print(f"❌ shared_courses 캐시 삭제 실패: {e}")
+            # 실패해도 계속 진행
 
 # 전역 스케줄러 인스턴스
 cache_scheduler = CacheScheduler()

@@ -106,9 +106,8 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 def root():
     return {
         "message": "Dating App API is running!",
-        "api_url": config.API_URL,
-        "kakao_rest_api_key": config.KAKAO_REST_API_KEY,       # Kakao REST API Key 반환 예시
-        "kakao_redirect_uri": config.KAKAO_REDIRECT_URI,       # Kakao Redirect URI 반환 예시
+        "version": "1.0.0",
+        "status": "healthy"
     }
 
 if __name__ == "__main__":

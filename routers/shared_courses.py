@@ -243,6 +243,11 @@ async def get_shared_course_detail(
     course_info = None
     is_own_course = current_user and shared_course.shared_by_user_id == current_user.user_id
     
+    print(f"DEBUG: is_own_course = {is_own_course}")
+    print(f"DEBUG: is_purchased = {is_purchased}")
+    print(f"DEBUG: shared_course.course = {shared_course.course}")
+    print(f"DEBUG: shared_course.course_id = {shared_course.course_id}")
+    
     if (is_purchased or is_own_course) and shared_course.course:
         # 간단하게 places 정보 생성 (직접 DB 조회)
         places = []

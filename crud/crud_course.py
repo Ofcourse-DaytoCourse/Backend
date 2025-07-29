@@ -103,16 +103,16 @@ async def create_course(db: AsyncSession, course_in: CourseCreate):
     return db_course
 
 async def get_course(db: AsyncSession, course_id: int):
-    result = await db.execute(select(Course).where(Course.course_id == course_id))
+    result = await db.execute(select(Course).where(Course.course_id == course_id, Course.is_deleted == False))
     return result.scalar_one_or_none()
 
 async def get_all_courses(db: AsyncSession):
-    result = await db.execute(select(Course))
+    result = await db.execute(select(Course).where(Course.is_deleted == False))
     return result.scalars().all()
 
 async def get_all_courses_for_user(db: AsyncSession, user_id: str):
     # 자신의 코스 조회
-    my_courses_result = await db.execute(select(Course).where(Course.user_id == user_id))
+    my_courses_result = await db.execute(select(Course).where(Course.user_id == user_id, Course.is_deleted == False))
     my_courses = my_courses_result.scalars().all()
     
     # 커플 관계 확인하여 공유된 코스도 조회
@@ -135,7 +135,8 @@ async def get_all_courses_for_user(db: AsyncSession, user_id: str):
             shared_courses_result = await db.execute(
                 select(Course).where(
                     (Course.user_id == partner_id) & 
-                    (Course.is_shared_with_couple == True)
+                    (Course.is_shared_with_couple == True) &
+                    (Course.is_deleted == False)
                 )
             )
             shared_courses = shared_courses_result.scalars().all()
@@ -152,7 +153,7 @@ async def get_all_courses_for_user(db: AsyncSession, user_id: str):
 
 async def get_course_detail(db: AsyncSession, course_id: int, user_id: str):
     # 먼저 자신의 코스인지 확인
-    result = await db.execute(select(Course).where(Course.course_id == course_id, Course.user_id == user_id))
+    result = await db.execute(select(Course).where(Course.course_id == course_id, Course.user_id == user_id, Course.is_deleted == False))
     course = result.scalar_one_or_none()
     
     # 자신의 코스가 아니라면 커플의 공유된 코스인지 확인
@@ -177,7 +178,8 @@ async def get_course_detail(db: AsyncSession, course_id: int, user_id: str):
                     select(Course).where(
                         (Course.course_id == course_id) & 
                         (Course.user_id == partner_id) & 
-                        (Course.is_shared_with_couple == True)
+                        (Course.is_shared_with_couple == True) &
+                        (Course.is_deleted == False)
                     )
                 )
                 course = shared_result.scalar_one_or_none()
@@ -274,7 +276,7 @@ async def get_course_detail(db: AsyncSession, course_id: int, user_id: str):
 
 async def get_course_with_comments(db: AsyncSession, course_id: int, user_id: str):
     # 먼저 자신의 코스인지 확인
-    course_result = await db.execute(select(Course).where(Course.course_id == course_id, Course.user_id == user_id))
+    course_result = await db.execute(select(Course).where(Course.course_id == course_id, Course.user_id == user_id, Course.is_deleted == False))
     course = course_result.scalar_one_or_none()
     
     # 자신의 코스가 아니라면 커플의 공유된 코스인지 확인
@@ -299,7 +301,8 @@ async def get_course_with_comments(db: AsyncSession, course_id: int, user_id: st
                     select(Course).where(
                         (Course.course_id == course_id) & 
                         (Course.user_id == partner_id) & 
-                        (Course.is_shared_with_couple == True)
+                        (Course.is_shared_with_couple == True) &
+                        (Course.is_deleted == False)
                     )
                 )
                 course = shared_result.scalar_one_or_none()
@@ -426,7 +429,7 @@ async def get_course_with_comments(db: AsyncSession, course_id: int, user_id: st
 
 async def share_course(db: AsyncSession, course_id: int, user_id: str):
     # ORM 객체를 직접 조회
-    result = await db.execute(select(Course).where(Course.course_id == course_id, Course.user_id == user_id))
+    result = await db.execute(select(Course).where(Course.course_id == course_id, Course.user_id == user_id, Course.is_deleted == False))
     course = result.scalar_one_or_none()
     
     if not course:
@@ -439,19 +442,20 @@ async def share_course(db: AsyncSession, course_id: int, user_id: str):
 
 async def delete_course(db: AsyncSession, course_id: int, user_id: str):
     # ORM 객체를 직접 조회 (dict가 아닌)
-    result = await db.execute(select(Course).where(Course.course_id == course_id, Course.user_id == user_id))
+    result = await db.execute(select(Course).where(Course.course_id == course_id, Course.user_id == user_id, Course.is_deleted == False))
     course = result.scalar_one_or_none()
     
     if not course:
         return False
     
-    await db.delete(course)
+    # Soft delete: is_deleted를 True로 설정
+    course.is_deleted = True
     await db.commit()
     return True
 
 async def update_course_description(db: AsyncSession, course_id: int, user_id: str, description: str):
     # ORM 객체를 직접 조회
-    result = await db.execute(select(Course).where(Course.course_id == course_id, Course.user_id == user_id))
+    result = await db.execute(select(Course).where(Course.course_id == course_id, Course.user_id == user_id, Course.is_deleted == False))
     course = result.scalar_one_or_none()
     
     if not course:
@@ -464,7 +468,7 @@ async def update_course_description(db: AsyncSession, course_id: int, user_id: s
 
 async def update_course_title(db: AsyncSession, course_id: int, user_id: str, title: str):
     # ORM 객체를 직접 조회
-    result = await db.execute(select(Course).where(Course.course_id == course_id, Course.user_id == user_id))
+    result = await db.execute(select(Course).where(Course.course_id == course_id, Course.user_id == user_id, Course.is_deleted == False))
     course = result.scalar_one_or_none()
     
     if not course:
@@ -478,7 +482,7 @@ async def update_course_title(db: AsyncSession, course_id: int, user_id: str, ti
 async def copy_course_for_purchase(db: AsyncSession, course_id: int, buyer_user_id: str):
     """구매한 코스를 구매자의 코스로 복사"""
     try:
-        # 1. 원본 코스 조회
+        # 1. 원본 코스 조회 (공유된 코스는 삭제되어도 구매 가능)
         result = await db.execute(select(Course).where(Course.course_id == course_id))
         original_course = result.scalar_one_or_none()
         

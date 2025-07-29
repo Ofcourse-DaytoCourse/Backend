@@ -23,38 +23,8 @@ async def load_places_to_postgresql():
         engine = create_async_engine(DATABASE_URL, echo=False)  # echo=False로 로그 줄임
         SessionLocal = sessionmaker(bind=engine, class_=AsyncSession, expire_on_commit=False)
         
-        # 2. 카테고리 데이터 로딩
-        print("📂 카테고리 데이터 로딩...")
-        categories_map = {}
-        
-        async with SessionLocal() as session:
-            # 기본 카테고리들 생성
-            categories = [
-                "음식점", "카페", "문화시설", "쇼핑", "엔터테인먼트", 
-                "야외활동", "휴식시설", "술집", "주차장", "기타"
-            ]
-            
-            for cat_name in categories:
-                # 기존 카테고리 
-                result = await session.execute(
-                    select(PlaceCategory).where(PlaceCategory.category_name == cat_name)
-                )
-                existing_category = result.scalar_one_or_none()
-                
-                if existing_category:
-                    categories_map[cat_name] = existing_category.category_id
-                    print(f"✓ 기존 카테고리 사용: {cat_name} (ID: {existing_category.category_id})")
-                else:
-                    category = PlaceCategory(
-                        category_name=cat_name
-                    )
-                    session.add(category)
-                    await session.flush()  # ID 생성을 위해 flush
-                    categories_map[cat_name] = category.category_id
-                    print(f"✅ 새 카테고리 생성: {cat_name} (ID: {category.category_id})")
-                
-            await session.commit()
-            print(f"✅ {len(categories)} 개 카테고리 준비 완료")
+        # 2. 카테고리는 자체 필드 사용 (기존 카테고리 테이블 사용 안함)
+        print("📂 새 카테고리 시스템 사용 (major/middle/minor_category)")
         
         # 3. 장소 데이터 로딩
         data_dir = "./data"
@@ -63,23 +33,23 @@ async def load_places_to_postgresql():
         if not os.path.exists(data_dir):
             print(f"❌ 데이터 디렉토리가 없습니다: {data_dir}")
             return
-            
+        
         for filename in os.listdir(data_dir):
             if filename.endswith('.json'):
-                category_name = filename.replace('.json', '')
-                
-                if category_name not in categories_map:
-                    print(f"⚠️ 알 수 없는 카테고리: {category_name}")
-                    continue
-                
-                print(f"📥 {category_name} 데이터 로딩 중...")
+                print(f"📥 {filename} 데이터 로딩 중...")
                 
                 with open(os.path.join(data_dir, filename), 'r', encoding='utf-8') as f:
-                    places_data = json.load(f)
+                    data = json.load(f)
+                
+                # 새 데이터 구조 처리
+                places_array = data.get('places', [])
+                file_major_category = data.get('major_category', filename.replace('.json', ''))
+                
+                print(f"   📊 총 {len(places_array)}개 장소 발견")
                 
                 async with SessionLocal() as session:
                     count = 0
-                    for place_data in places_data:
+                    for place_data in places_array:
                         try:
                             # place_id 확인 (필수 필드)
                             place_id = place_data.get('place_id')
@@ -108,32 +78,36 @@ async def load_places_to_postgresql():
                             except (ValueError, TypeError):
                                 print(f"   ⚠️ 좌표 변환 실패: {place_id}")
                             
-                            # Place 객체 생성 (place_id 직접 지정)
+                            # Place 객체 생성 (새 필드 매핑)
                             place = Place(
                                 place_id=place_id,  # JSON의 place_id 사용
                                 name=place_data.get('name', ''),
                                 address=place_data.get('address', ''),
-                                description=place_data.get('description', ''),
+                                description=place_data.get('detailed_description', ''),  # 필드명 변경
                                 latitude=latitude,
                                 longitude=longitude,
                                 phone=place_data.get('phone', ''),
                                 kakao_url=place_data.get('kakao_url', ''),
-                                is_parking=place_data.get('is_parking', False),
+                                is_parking=place_data.get('parking_available', False),  # 필드명 변경
                                 is_open=place_data.get('is_open', True),
                                 open_hours=place_data.get('open_hours'),
-                                price=place_data.get('price', []),
-                                summary=place_data.get('summary', ''),
+                                price=place_data.get('menu_info', []),  # 필드명 변경
+                                summary=place_data.get('gpt_summary', ''),  # 필드명 변경
                                 info_urls=place_data.get('info_urls', []),
-                                category_id=categories_map[category_name]
+                                category_id=None,  # 기존 카테고리 시스템 사용 안함
+                                
+                                # 새 필드들
+                                business_hours=place_data.get('business_hours', {}),
+                                menu_info=place_data.get('menu_info', []),
+                                homepage_url=place_data.get('homepage_url'),
+                                kakao_category=place_data.get('kakao_category'),
+                                major_category=place_data.get('major_category', file_major_category),
+                                middle_category=place_data.get('middle_category'),
+                                minor_category=place_data.get('minor_category')
                             )
                             session.add(place)
                             
-                            # 카테고리 관계 생성
-                            category_relation = PlaceCategoryRelation(
-                                place_id=place_id,
-                                category_id=categories_map[category_name]
-                            )
-                            session.add(category_relation)
+                            # 기존 카테고리 관계 테이블 사용 안함 (새 필드들로 대체)
                             
                             count += 1
                             
@@ -148,7 +122,7 @@ async def load_places_to_postgresql():
                     
                     await session.commit()
                     total_places += count
-                    print(f"✅ {category_name}: {count}개 장소 저장 완료")
+                    print(f"✅ {filename}: {count}개 장소 저장 완료")
         
         await engine.dispose()
         print(f"🎉 총 {total_places}개 장소 데이터 로딩 완료!")

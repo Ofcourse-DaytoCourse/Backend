@@ -37,7 +37,10 @@ class CRUDPlace:
         sort_by: Optional[str],
         min_rating: Optional[float],
         has_parking: Optional[bool],
-        has_phone: Optional[bool]
+        has_phone: Optional[bool],
+        major_category: Optional[str] = None,
+        middle_category: Optional[str] = None,
+        minor_category: Optional[str] = None
     ) -> str:
         """캐시 키 생성"""
         params = {
@@ -48,6 +51,9 @@ class CRUDPlace:
             'region': region,
             'sort_by': sort_by,
             'min_rating': min_rating,
+            'major_category': major_category,
+            'middle_category': middle_category,
+            'minor_category': minor_category,
             'has_parking': has_parking,
             'has_phone': has_phone
         }
@@ -67,13 +73,17 @@ class CRUDPlace:
         sort_by: Optional[str] = "review_count_desc",
         min_rating: Optional[float] = None,
         has_parking: Optional[bool] = None,
-        has_phone: Optional[bool] = None
+        has_phone: Optional[bool] = None,
+        major_category: Optional[str] = None,
+        middle_category: Optional[str] = None,
+        minor_category: Optional[str] = None
     ) -> Tuple[List[PlaceRead], int]:
         """필터링된 장소 목록 조회 (캐싱 적용)"""
         
         # 캐시 키 생성
         cache_key = self._generate_cache_key(
-            skip, limit, category_id, search, region, sort_by, min_rating, has_parking, has_phone
+            skip, limit, category_id, search, region, sort_by, min_rating, has_parking, has_phone,
+            major_category, middle_category, minor_category
         )
         
         # 캐시에서 조회 시도
@@ -116,6 +126,14 @@ class CRUDPlace:
                 query = query.where(Place.phone != '')
             else:
                 query = query.where(or_(Place.phone.is_(None), Place.phone == ''))
+                
+        # 카테고리 필터 추가
+        if major_category:
+            query = query.where(Place.major_category == major_category)
+        if middle_category:
+            query = query.where(Place.middle_category == middle_category)  
+        if minor_category:
+            query = query.where(Place.minor_category == minor_category)
         
         # 후기 데이터가 필요한 경우 조인 및 그룹화 처리
         needs_review_join = (
@@ -168,6 +186,15 @@ class CRUDPlace:
                 count_query = count_query.where(Place.phone != '')
             else:
                 count_query = count_query.where(or_(Place.phone.is_(None), Place.phone == ''))
+                
+        # count 쿼리에도 카테고리 필터 추가
+        if major_category:
+            count_query = count_query.where(Place.major_category == major_category)
+        if middle_category:
+            count_query = count_query.where(Place.middle_category == middle_category)  
+        if minor_category:
+            count_query = count_query.where(Place.minor_category == minor_category)
+            
         if min_rating is not None and min_rating > 0:
             # 평점 필터를 count 쿼리에도 적용
             count_query = select(func.count()).select_from(

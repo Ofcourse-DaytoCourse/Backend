@@ -17,6 +17,15 @@ class PlaceBase(BaseModel):
     info_urls: Optional[List[str]] = None
     kakao_url: Optional[str] = None
     category_id: Optional[int] = None
+    
+    # 새 필드들 추가
+    business_hours: Optional[Dict] = {}
+    menu_info: Optional[List[Dict]] = []
+    homepage_url: Optional[str] = None
+    kakao_category: Optional[str] = None
+    major_category: Optional[str] = None    # 대분류
+    middle_category: Optional[str] = None   # 중분류
+    minor_category: Optional[str] = None    # 소분류
 
 class PlaceCreate(PlaceBase):
     place_id: str  # 카카오 place_id (String 타입)
@@ -50,8 +59,10 @@ class PlaceListResponse(BaseModel):
 
 class AISearchRequest(BaseModel):
     description: str = Field(..., min_length=20, max_length=200, description="장소 검색 설명 (20-200자)")
-    district: str = Field(..., description="서울시 구 (예: 강남구)")
-    category: Optional[str] = Field(None, description="카테고리 (전체/음식점/카페/문화시설 등)")
+    district: Optional[str] = Field(None, description="서울시 구 (예: 강남구)")
+    major_category: Optional[str] = Field(None, description="대분류 (전체/음식점/카페/문화시설 등)")
+    middle_category: Optional[str] = Field(None, description="중분류")
+    minor_category: Optional[str] = Field(None, description="소분류")
 
 class AISearchResponse(BaseModel):
     places: List[PlaceRead]

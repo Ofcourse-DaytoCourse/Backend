@@ -106,6 +106,8 @@ class ChatCRUD:
             
             # 에이전트 API 호출
             agent_response = await self._call_agent_send_message(message_data)
+            print(f"[DEBUG] send_message - agent_response: {agent_response}")
+            print(f"[DEBUG] send_message - course_data 있음: {agent_response.get('response', {}).get('course_data') is not None}")
             
             if not agent_response.get('success'):
                 return None
@@ -115,9 +117,8 @@ class ChatCRUD:
             new_message_id = len(messages) + 1
             
             def safe_message_for_db(message):
-                """DB 저장용 메시지 변환 - 버튼은 요약 텍스트로"""
-                if isinstance(message, dict) and message.get('message_type') == 'buttons':
-                    return message.get('question', '선택 옵션')
+                """DB 저장용 메시지 변환 - 버튼 메시지 원본 유지"""
+                # 버튼 메시지는 원본 그대로 저장 (이어서 하기 기능을 위해)
                 return message
             
             messages.extend([
@@ -131,7 +132,8 @@ class ChatCRUD:
                     "message_id": new_message_id + 1,
                     "message_type": "ASSISTANT",
                     "message_content": safe_message_for_db(agent_response['response']['message']),
-                    "sent_at": datetime.now().isoformat()
+                    "sent_at": datetime.now().isoformat(),
+                    "course_data": agent_response.get('response', {}).get('course_data')
                 }
             ])
             
@@ -156,7 +158,11 @@ class ChatCRUD:
             # 저장 여부 확인 및 자동 저장
             await self._handle_profile_save(db, agent_response, message_data.user_id)
             
-            return agent_response
+            # course_data 필드를 응답에 포함하여 반환 (Step 7 완료시)
+            return {
+                **agent_response,
+                'course_data': agent_response.get('response', {}).get('course_data')
+            }
             
         except Exception as e:
             await db.rollback()
@@ -196,9 +202,8 @@ class ChatCRUD:
             
             # 메시지 필드 확인 및 처리
             def safe_message_for_db(message):
-                """DB 저장용 메시지 변환 - 버튼은 요약 텍스트로"""
-                if isinstance(message, dict) and message.get('message_type') == 'buttons':
-                    return message.get('question', '선택 옵션')
+                """DB 저장용 메시지 변환 - 버튼 메시지 원본 유지"""
+                # 버튼 메시지는 원본 그대로 저장 (이어서 하기 기능을 위해)
                 return message
             
             message_content = agent_response.get('message') or agent_response.get('response', {}).get('message') or "코스 추천이 완료되었습니다!"
@@ -208,7 +213,7 @@ class ChatCRUD:
                 "message_type": "ASSISTANT",
                 "message_content": safe_message_for_db(message_content),
                 "sent_at": datetime.now().isoformat(),
-                "course_data": agent_response.get('course_data')
+                "course_data": agent_response.get('response', {}).get('course_data')
             })
             
             # JSON 필드 업데이트를 SQLAlchemy에 명시적으로 알리기
@@ -224,7 +229,11 @@ class ChatCRUD:
             if user_id:
                 await self._handle_profile_save(db, agent_response, user_id)
             
-            return agent_response
+            # course_data 필드를 응답에 포함하여 반환
+            return {
+                **agent_response,
+                'course_data': agent_response.get('response', {}).get('course_data')
+            }
             
         except Exception as e:
             await db.rollback()
@@ -302,6 +311,9 @@ class ChatCRUD:
             print(f"[DEBUG] 메시지 개수: {len(session.messages) if session.messages else 0}")
             print(f"[DEBUG] 메시지 내용: {session.messages}")
             
+            # 세션 상태 분석
+            session_analysis = self._analyze_session_status(session.messages or [])
+            
             return {
                 "session": {
                     "session_id": session.session_id,
@@ -312,12 +324,79 @@ class ChatCRUD:
                     "last_activity_at": session.last_activity_at.isoformat(),
                     "expires_at": session.expires_at.isoformat() if session.expires_at else None
                 },
-                "messages": session.messages or []
+                "messages": session.messages or [],
+                "session_analysis": session_analysis
             }
             
         except Exception as e:
             print(f"세션 상세 조회 오류: {e}")
             return None
+    
+    def _analyze_session_status(self, messages: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """메시지를 분석해서 세션 상태를 판단
+        
+        Returns:
+            {
+                "is_completed": bool,
+                "can_chat": bool,
+                "status": "completed" | "in_progress" | "error",
+                "completion_info": dict | None
+            }
+        """
+        if not messages:
+            return {
+                "is_completed": False,
+                "can_chat": True,
+                "status": "in_progress",
+                "completion_info": None
+            }
+        
+        # 최종 코스 추천 완료 여부 체크 (course_data가 있는 메시지)
+        for message in reversed(messages):  # 마지막부터 찾기
+            if message.get('course_data'):
+                return {
+                    "is_completed": True,
+                    "can_chat": False,  # 채팅 불가
+                    "status": "completed",
+                    "completion_info": {
+                        "completed_at": message.get('sent_at'),
+                        "message_id": message.get('message_id')
+                    }
+                }
+        
+        # 마지막 메시지가 오류인지 체크
+        if messages:
+            last_message = messages[-1]
+            last_content = str(last_message.get('message_content', '')).lower()
+            
+            # 오류 키워드 체크
+            error_keywords = [
+                '실패', '오류', 'error', 'failed', '다시 시도',
+                '죄송합니다', '문제가 발생', '연결이 끊어졌',
+                '서비스를 이용할 수 없', '일시적인 오류',
+                '코스 추천에 실패', '메시지 전송 중 오류'
+            ]
+            
+            if any(keyword in last_content for keyword in error_keywords):
+                return {
+                    "is_completed": False,
+                    "can_chat": True,
+                    "status": "error",
+                    "completion_info": None,
+                    "error_info": {
+                        "error_message": last_message.get('message_content'),
+                        "error_at": last_message.get('sent_at'),
+                        "message_id": last_message.get('message_id')
+                    }
+                }
+        
+        # 일반 진행 중
+        return {
+            "is_completed": False,
+            "can_chat": True,
+            "status": "in_progress",
+            "completion_info": None
+        }
     
     async def delete_session(
         self, 
