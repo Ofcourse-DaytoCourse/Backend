@@ -18,5 +18,5 @@ COPY . .
 # 포트 노출
 EXPOSE 8000
 
-# 서버 실행
-CMD ["python", "main.py"]
+# 환경변수 체크 스크립트 실행 후 서버 시작
+CMD ["sh", "-c", "python -c 'import os; print(\"DATABASE_URL:\", os.getenv(\"DATABASE_URL\", \"NOT SET\"))' && python main.py"]
