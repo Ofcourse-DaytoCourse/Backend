@@ -233,21 +233,10 @@ class CacheScheduler:
     async def _clear_shared_courses_cache(self):
         """서버 시작시 모든 shared_courses 캐시 삭제"""
         try:
-            # Redis에서 shared_courses 관련 모든 캐시 키 조회
-            import subprocess
-            result = subprocess.run(['redis-cli', 'KEYS', '*shared*'], 
-                                  capture_output=True, text=True)
-            
-            if result.returncode == 0 and result.stdout.strip():
-                cache_keys = result.stdout.strip().split('\n')
-                
-                # 각 캐시 키 삭제
-                for key in cache_keys:
-                    if key.strip():  # 빈 키 제외
-                        redis_client.delete(key=key.strip())
-                        print(f"🗑️ Redis 캐시 삭제: {key.strip()}")
-                
-                print(f"🗑️ 총 {len([k for k in cache_keys if k.strip()])}개 shared_courses 캐시 삭제 완료")
+            # Redis 클라이언트를 사용해서 직접 삭제
+            deleted_count = redis_client.delete(pattern="shared_courses_list:*")
+            if deleted_count > 0:
+                print(f"🗑️ 총 {deleted_count}개 shared_courses 캐시 삭제 완료")
             else:
                 print("🔍 삭제할 shared_courses 캐시가 없습니다")
                 
