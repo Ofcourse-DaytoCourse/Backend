@@ -1,6 +1,7 @@
 import json
-import aiohttp
+import requests
 import asyncio
+import os
 from datetime import datetime, timedelta
 from typing import List, Optional, Dict, Any
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -18,8 +19,9 @@ from schemas.chat import (
     SessionInfo
 )
 
-# 에이전트 API 설정
-AGENT_BASE_URL = "http://localhost:8001"
+# RunPod 설정
+RUNPOD_ENDPOINT = os.getenv("RUNPOD_ENDPOINT", "https://api.runpod.ai/v2/wmf9eow7u6pwab/runsync")
+RUNPOD_API_KEY = os.getenv("RUNPOD_API_KEY")
 AGENT_TIMEOUT = 120  # 120초 타임아웃 (코스 추천은 시간이 오래 걸림)
 
 class ChatCRUD:
@@ -466,25 +468,49 @@ class ChatCRUD:
         return await self._make_agent_request("POST", "/chat/start-recommendation", payload)
     
     async def _make_agent_request(self, method: str, endpoint: str, payload: Dict[str, Any]) -> Dict[str, Any]:
-        """에이전트 API 공통 요청 메서드"""
+        """RunPod API를 통한 에이전트 요청 메서드"""
         try:
-            timeout = aiohttp.ClientTimeout(total=AGENT_TIMEOUT)
-            async with aiohttp.ClientSession(timeout=timeout) as session:
-                url = f"{AGENT_BASE_URL}{endpoint}"
-                
-                async with session.request(method, url, json=payload) as response:
-                    if response.status == 200:
-                        return await response.json()
+            headers = {
+                "Authorization": f"Bearer {RUNPOD_API_KEY}",
+                "Content-Type": "application/json"
+            }
+            
+            runpod_payload = {
+                "input": {
+                    "method": method,
+                    "path": endpoint,
+                    "body": payload
+                }
+            }
+            
+            print(f"🔄 RunPod API 호출: {method} {endpoint}")
+            response = requests.post(RUNPOD_ENDPOINT, json=runpod_payload, headers=headers, timeout=AGENT_TIMEOUT)
+            
+            # RunPod 응답에서 실제 데이터 추출
+            if response.status_code == 200:
+                runpod_result = response.json()
+                if "output" in runpod_result:
+                    output = runpod_result["output"]
+                    print(f"✅ RunPod 응답: HTTP {output.get('status_code', 200)}")
+                    
+                    if output.get('status_code', 200) == 200:
+                        return output.get('body', {})
                     else:
-                        error_text = await response.text()
-                        print(f"에이전트 API 오류: {response.status} - {error_text}")
-                        return {"success": False, "error": error_text}
-                        
-        except asyncio.TimeoutError:
-            print(f"에이전트 API 타임아웃: {endpoint}")
+                        error_msg = output.get('body', 'Unknown error')
+                        print(f"에이전트 API 오류: {output.get('status_code')} - {error_msg}")
+                        return {"success": False, "error": error_msg}
+                else:
+                    print(f"RunPod 응답 형식 오류: {runpod_result}")
+                    return {"success": False, "error": "RunPod 응답 형식 오류"}
+            else:
+                print(f"❌ RunPod API 오류: HTTP {response.status_code}")
+                return {"success": False, "error": f"RunPod API 오류: {response.status_code}"}
+                
+        except requests.exceptions.Timeout:
+            print(f"RunPod API 타임아웃: {endpoint}")
             return {"success": False, "error": "API 타임아웃"}
         except Exception as e:
-            print(f"에이전트 API 호출 오류: {e}")
+            print(f"RunPod API 호출 오류: {e}")
             return {"success": False, "error": str(e)}
     
     def _filter_and_map_profile(self, profile_dict: Dict[str, Any]) -> Dict[str, Any]:
