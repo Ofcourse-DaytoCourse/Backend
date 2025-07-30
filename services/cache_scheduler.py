@@ -34,8 +34,8 @@ class CacheScheduler:
             self.is_running = True
             print("✅ 캐시 스케줄러 시작 - 10분마다 캐시 갱신")
             
-            # 서버 시작 시 초기 캐시 생성
-            asyncio.create_task(self._initial_cache_warmup())
+            # 서버 시작 시 초기 캐시 생성 (임시 비활성화)
+            # asyncio.create_task(self._initial_cache_warmup())
             
         except Exception as e:
             print(f"❌ 캐시 스케줄러 시작 실패: {e}")
