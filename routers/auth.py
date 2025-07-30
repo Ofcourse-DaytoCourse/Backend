@@ -39,6 +39,9 @@ async def social_login(request: SocialLoginRequest, db: AsyncSession = Depends(g
         async with httpx.AsyncClient() as client:
             token_response = await client.post(token_url, data=token_data)
         if token_response.status_code != 200:
+            print(f"카카오 토큰 요청 실패 - 상태코드: {token_response.status_code}")
+            print(f"응답 내용: {token_response.text}")
+            print(f"요청 데이터: {token_data}")
             raise HTTPException(status_code=400, detail="카카오 토큰 요청 실패")
 
         token_info = token_response.json()

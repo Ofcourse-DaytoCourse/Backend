@@ -49,7 +49,8 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:3000", 
         "http://localhost:3001",
-        config.FRONTEND_URL
+        config.FRONTEND_URL,
+        "https://78h8zt2ae3igpb-8000.proxy.runpod.net"
     ],
     allow_credentials=True,
     allow_methods=["*"],
